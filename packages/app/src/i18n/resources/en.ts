@@ -2196,6 +2196,10 @@ export const en = {
     input: "Input",
     output: "Output",
   },
+  chatOutline: {
+    jumpToMyLatest: "Jump to my latest prompt",
+    jumpToLatestOther: "Jump to latest prompt from someone else",
+  },
   turnSummary: {
     details: "View turn details",
     sentBy: "Sent by {{name}}",

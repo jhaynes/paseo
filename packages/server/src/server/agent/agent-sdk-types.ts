@@ -8,6 +8,7 @@ import type {
   JsonValue,
   ProviderOptions,
   ToolPolicy,
+  UserMessageSender,
 } from "@getpaseo/protocol/agent-types";
 import type { AgentMessage } from "@getpaseo/protocol/agent-message";
 import type { AgentAttachment, ProviderInstallationInspection } from "@getpaseo/protocol/messages";
@@ -211,6 +212,8 @@ export interface AgentRunOptions {
   resumeFrom?: AgentPersistenceHandle;
   maxThinkingTokens?: number;
   clientMessageId?: string;
+  /** Who sent this prompt. Recorded on the submitted user_message row; never read by providers. */
+  sender?: UserMessageSender;
 }
 
 export interface AgentSteerOptions extends AgentRunOptions {
@@ -408,7 +411,13 @@ export interface PluginTimelineItem {
 }
 
 export type AgentTimelineItem =
-  | { type: "user_message"; text: string; messageId?: string; clientMessageId?: string }
+  | {
+      type: "user_message";
+      text: string;
+      messageId?: string;
+      clientMessageId?: string;
+      sender?: UserMessageSender;
+    }
   | { type: "assistant_message"; text: string; messageId?: string }
   | { type: "reasoning"; text: string }
   | ToolCallTimelineItem

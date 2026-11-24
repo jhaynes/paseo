@@ -97,7 +97,12 @@ export function createStreamPresentation() {
             timelineCursor: item.timelineCursor,
             timestamp: item.timestamp,
             text: message.text,
-            sender: message.sender,
+            sender: {
+              kind: "agent" as const,
+              agentId: message.sender.id,
+              ...(message.sender.serverId ? { serverId: message.sender.serverId } : {}),
+              ...(message.sender.title ? { title: message.sender.title } : {}),
+            },
           },
         ];
       }

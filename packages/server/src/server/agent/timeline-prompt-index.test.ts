@@ -51,4 +51,93 @@ describe("buildTimelinePromptIndex", () => {
     expect(result.prompts[0]?.preview).toHaveLength(120);
     expect(result.prompts[0]?.preview.endsWith("…")).toBe(true);
   });
+
+  it("keeps the recorded sender on a prompt entry", () => {
+    const rows: AgentTimelineRow[] = [
+      {
+        seq: 1,
+        timestamp: "2026-01-01T00:00:00.000Z",
+        item: { type: "user_message", text: "mine" },
+      },
+      {
+        seq: 2,
+        timestamp: "2026-01-01T00:00:01.000Z",
+        item: {
+          type: "user_message",
+          text: "theirs",
+          sender: { kind: "plugin", pluginId: "quince", label: "Quince" },
+        },
+      },
+    ];
+
+    expect(buildTimelinePromptIndex("epoch-1", rows).prompts).toEqual([
+      { seq: 1, timestamp: "2026-01-01T00:00:00.000Z", preview: "mine" },
+      {
+        seq: 2,
+        timestamp: "2026-01-01T00:00:01.000Z",
+        preview: "theirs",
+        sender: { kind: "plugin", pluginId: "quince", label: "Quince" },
+      },
+    ]);
+  });
+
+  it("indexes agent message rows as prompts with their agent sender", () => {
+    const rows: AgentTimelineRow[] = [
+      {
+        seq: 1,
+        timestamp: "2026-01-01T00:00:00.000Z",
+        item: { type: "user_message", text: "mine" },
+      },
+      {
+        seq: 2,
+        timestamp: "2026-01-01T00:00:01.000Z",
+        item: {
+          type: "tool_call",
+          callId: "paseo-agent-message:m-1",
+          name: "agent_message",
+          status: "completed",
+          error: null,
+          agentMessage: {
+            event: "message",
+            sender: { id: "orchestrator", serverId: "host-2", title: "Orchestrator" },
+            text: "  Run the  checks  ",
+          },
+          detail: { type: "plain_text", text: "Run the checks", icon: "bot" },
+        },
+      },
+      {
+        // Completion notifications are not prompts.
+        seq: 3,
+        timestamp: "2026-01-01T00:00:02.000Z",
+        item: {
+          type: "tool_call",
+          callId: "paseo-agent-message:m-2",
+          name: "agent_message",
+          status: "completed",
+          error: null,
+          agentMessage: {
+            event: "finished",
+            sender: { id: "orchestrator" },
+            text: "Worker finished",
+          },
+          detail: { type: "plain_text", text: "Worker finished", icon: "bot" },
+        },
+      },
+    ];
+
+    expect(buildTimelinePromptIndex("epoch-1", rows).prompts).toEqual([
+      { seq: 1, timestamp: "2026-01-01T00:00:00.000Z", preview: "mine" },
+      {
+        seq: 2,
+        timestamp: "2026-01-01T00:00:01.000Z",
+        preview: "Run the checks",
+        sender: {
+          kind: "agent",
+          agentId: "orchestrator",
+          serverId: "host-2",
+          title: "Orchestrator",
+        },
+      },
+    ]);
+  });
 });

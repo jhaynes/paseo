@@ -229,6 +229,48 @@ describe("user message identity", () => {
     expect(result.tail[0]).not.toHaveProperty("turnId");
   });
 
+  it("keeps a recorded sender through canonical reconciliation", () => {
+    const result = applyStreamEvent({
+      tail: [],
+      head: [],
+      event: {
+        type: "timeline",
+        provider: "codex",
+        item: {
+          type: "user_message",
+          text: "hello",
+          clientMessageId: "hello-client",
+          messageId: "provider-hello",
+          sender: { kind: "plugin", pluginId: "quince", label: "Quince" },
+        },
+      },
+      timestamp: new Date("2026-08-15T10:00:01Z"),
+    });
+
+    expect(result.tail).toHaveLength(1);
+    expect(result.tail[0]).toEqual(
+      expect.objectContaining({
+        kind: "user_message",
+        sender: { kind: "plugin", pluginId: "quince", label: "Quince" },
+      }),
+    );
+  });
+
+  it("leaves a person's prompt without a sender", () => {
+    const result = reduceStreamUpdate(
+      [],
+      {
+        type: "timeline",
+        provider: "codex",
+        item: { type: "user_message", text: "hello" },
+      },
+      new Date("2026-08-15T10:00:00Z"),
+    );
+
+    expect(result).toHaveLength(1);
+    expect(result[0]).not.toHaveProperty("sender");
+  });
+
   it("adds provider identity without replacing local presentation", () => {
     const timestamp = new Date("2026-07-26T10:00:00.000Z");
     const local = createUserMessage({

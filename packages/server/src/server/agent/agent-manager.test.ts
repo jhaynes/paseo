@@ -842,6 +842,68 @@ test("uses an injected timeline store without making it a production requirement
   }
 });
 
+test("records the sender on a submitted plugin prompt and recovers it across a provider replay", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-sender-replay-"));
+  const store = new RecordingTimelineStore();
+  class ReplaySession extends TestAgentSession {
+    override async *streamHistory(): AsyncGenerator<AgentStreamEvent> {
+      // The provider replays the raw prompt without any sender of its own.
+      yield {
+        type: "timeline",
+        provider: "codex",
+        item: { type: "user_message", text: "orchestrate", messageId: "prompt-1" },
+      };
+    }
+  }
+  class ReplayClient extends TestAgentClient {
+    override async resumeSession(
+      _handle: AgentPersistenceHandle,
+      config?: Partial<AgentSessionConfig>,
+    ): Promise<AgentSession> {
+      return new ReplaySession({ provider: "codex", cwd: config?.cwd ?? workdir });
+    }
+  }
+  const manager = new AgentManager({
+    clients: { codex: new ReplayClient() },
+    durableTimelineStore: store,
+    logger,
+  });
+  let agentId: string | null = null;
+  try {
+    const agent = await manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
+      workspaceId: undefined,
+    });
+    agentId = agent.id;
+    for await (const _event of manager.streamAgent(agent.id, "orchestrate", {
+      clientMessageId: "prompt-1",
+      sender: { kind: "plugin", pluginId: "quince", label: "Quince" },
+    })) {
+    }
+    expect(manager.getTimeline(agent.id).find((item) => item.type === "user_message")).toEqual(
+      expect.objectContaining({
+        type: "user_message",
+        sender: { kind: "plugin", pluginId: "quince", label: "Quince" },
+      }),
+    );
+
+    // The replay replaces the timeline; the sender of the matching prompt row survives it.
+    await manager.reloadAgentSession(agent.id, undefined, { rehydrateFromDisk: true });
+    await manager.hydrateTimelineFromProvider(agent.id, { broadcast: true });
+    await manager.flush();
+    expect((await manager.getTimelineRows(agent.id)).map((row) => row.item)).toEqual([
+      {
+        type: "user_message",
+        text: "orchestrate",
+        messageId: "prompt-1",
+        sender: { kind: "plugin", pluginId: "quince", label: "Quince" },
+      },
+    ]);
+  } finally {
+    if (agentId) await manager.closeAgent(agentId).catch(() => undefined);
+    rmSync(workdir, { recursive: true, force: true });
+  }
+});
+
 test("refreshing an agent replaces the injected timeline store instead of appending a second copy", async () => {
   const workdir = mkdtempSync(join(tmpdir(), "agent-manager-timeline-rehydrate-"));
   const store = new RecordingTimelineStore();

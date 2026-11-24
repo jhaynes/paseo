@@ -26,7 +26,12 @@ import { useRevealedText, type MarkdownPhase } from "@/hooks/use-revealed-text";
 import { ICON_SIZE, type Theme } from "@/styles/theme";
 import { inlineUnistylesStyle } from "@/styles/unistyles-inline-style";
 import { buildToolCallPresentation } from "@/tool-calls/presentation";
-import type { TaskActivity, TodoEntry, UserMessageImageAttachment } from "@/types/stream";
+import type {
+  TaskActivity,
+  TodoEntry,
+  UserMessageImageAttachment,
+  UserMessageSender,
+} from "@/types/stream";
 import { setAssistantMessageHeight } from "@/utils/assistant-message-height-estimate";
 import { isRenderProfileEnabled } from "@/utils/render-profiler";
 import { writeMarkdownToRichClipboard } from "@/utils/rich-clipboard";
@@ -103,7 +108,7 @@ export type { AssistantForkTarget };
 interface UserMessageProps {
   /** The timeline item's id, which keeps the message's expanded state. */
   itemId: string;
-  sender?: AgentMessage["sender"];
+  sender?: UserMessageSender;
   serverId?: string;
   agentId?: string;
   messageId?: string;

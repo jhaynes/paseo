@@ -2190,6 +2190,10 @@ export const ja: TranslationResources = {
     input: "入力",
     output: "出力",
   },
+  chatOutline: {
+    jumpToMyLatest: "自分の最新のプロンプトへ移動",
+    jumpToLatestOther: "他の送信者の最新のプロンプトへ移動",
+  },
   turnSummary: {
     details: "ターンの詳細を表示",
     sentBy: "{{name}} から送信",

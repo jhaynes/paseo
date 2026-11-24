@@ -6,6 +6,7 @@ import {
 import type { Logger } from "pino";
 
 import type { AgentPromptInput, AgentRunOptions } from "./agent-sdk-types.js";
+import type { UserMessageSender } from "@getpaseo/protocol/agent-types";
 import type { AgentManager, ManagedAgent } from "./agent-manager.js";
 import { ForegroundPromptStart } from "./agent-run-state.js";
 import type { AgentStorage } from "./agent-storage.js";
@@ -268,6 +269,8 @@ export interface SendPromptToAgentParams {
   /** Prompt to dispatch to the provider (may include image blocks or wrapped text). */
   prompt: AgentPromptInput;
   source?: AgentPromptSource;
+  /** Recorded on the submitted user_message row so clients can attribute the prompt. */
+  sender?: UserMessageSender;
   messageId?: string;
   activeTurnBehavior?: ActiveTurnBehavior;
   runOptions?: AgentRunOptions;
@@ -383,7 +386,7 @@ async function resolvePromptSource(
 export async function sendPromptToAgent(
   params: SendDirectPromptParams,
 ): Promise<PromptDispatchResult> {
-  const { agentMessages, source, messageId, ...send } = params;
+  const { agentMessages, source, messageId, sender, ...send } = params;
   return agentMessages.sendDirect(
     {
       recipientId: params.agentId,
@@ -399,9 +402,11 @@ export async function sendPromptToAgent(
         prompt: joined.prompt,
         sessionMode: joined.sessionMode,
         unarchive: joined.unarchive,
-        runOptions: joined.messageId
-          ? { ...send.runOptions, clientMessageId: joined.messageId }
-          : send.runOptions,
+        runOptions: {
+          ...send.runOptions,
+          ...(joined.messageId ? { clientMessageId: joined.messageId } : {}),
+          ...(sender ? { sender } : {}),
+        },
       }),
   );
 }

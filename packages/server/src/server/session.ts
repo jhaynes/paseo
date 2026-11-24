@@ -64,6 +64,7 @@ import type {
 } from "../terminal/terminal-manager.js";
 import { TerminalSessionController } from "../terminal/terminal-session-controller.js";
 import type { TerminalActivity } from "@getpaseo/protocol/terminal-activity";
+import type { UserMessageSender } from "@getpaseo/protocol/agent-types";
 import type { BinaryFrame } from "@getpaseo/protocol/binary-frames/index";
 import {
   encodePluginEventFrame,
@@ -9135,6 +9136,20 @@ export class Session {
     return requested ?? "queue";
   }
 
+  /** The plugin label to record on prompts a plugin session sends. Null when it cannot be resolved. */
+  private async pluginSender(): Promise<UserMessageSender | null> {
+    const pluginId = parsePluginClientId(this.clientId);
+    if (!pluginId) return null;
+    let label: string | undefined;
+    try {
+      const plugin = await this.pluginRuntime?.listPlugins();
+      label = plugin?.find((item) => item.id === pluginId)?.name;
+    } catch {
+      // A missing label still leaves the plugin id on the sender.
+    }
+    return { kind: "plugin", pluginId, ...(label ? { label } : {}) };
+  }
+
   private async handleSendAgentMessageRequest(
     msg: Extract<SessionInboundMessage, { type: "send_agent_message_request" }>,
   ): Promise<void> {
@@ -9174,6 +9189,8 @@ export class Session {
         throw new Error('activeTurnBehavior "queue" needs an agent sender');
       let deliveryStatus: "queued" | undefined;
       let queuedReceipt: { activeTurnBehavior: AgentMessageBehavior; guidance: string } | undefined;
+      // A plugin session's send is attributable; a person's send stays anonymous.
+      const sender = msg.sourceAgentId ? null : await this.pluginSender();
       const send = async (beforeDispatch: () => Promise<void>) => {
         if (msg.sourceAgentId) {
           await beforeDispatch();
@@ -9205,6 +9222,7 @@ export class Session {
           agentStorage: this.agentStorage,
           agentId,
           prompt,
+          ...(sender ? { sender } : {}),
           messageId: msg.messageId,
           activeTurnBehavior: requested === "steer" ? "steer" : "interrupt",
           sessionMode: msg.sessionMode,

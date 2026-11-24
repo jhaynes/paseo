@@ -2144,6 +2144,10 @@ export const zhCN: TranslationResources = {
     input: "输入",
     output: "输出",
   },
+  chatOutline: {
+    jumpToMyLatest: "跳到我最近的提示",
+    jumpToLatestOther: "跳到其他发送者最近的提示",
+  },
   turnSummary: {
     details: "查看轮次详情",
     sentBy: "由 {{name}} 发送",

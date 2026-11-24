@@ -4,6 +4,9 @@ import {
   shouldAcceptPromptIndexEpoch,
   promptTickMagnification,
   resolveActivePromptSeq,
+  latestOwnPromptSeq,
+  latestOtherPromptSeq,
+  outlineSenderName,
   OUTLINE_MAGNIFY_RADIUS,
   type ChatOutlinePrompt,
 } from "./model";
@@ -49,6 +52,55 @@ describe("resolveActivePromptSeq", () => {
     expect(resolveActivePromptSeq(prompts, 1)).toBeNull();
     expect(resolveActivePromptSeq(prompts, null)).toBeNull();
     expect(resolveActivePromptSeq([], 42)).toBeNull();
+  });
+});
+
+describe("latest prompt by sender", () => {
+  const own = (seq: number): ChatOutlinePrompt => ({
+    ...prompt(seq),
+  });
+  const other = (
+    seq: number,
+    sender: NonNullable<ChatOutlinePrompt["sender"]>,
+  ): ChatOutlinePrompt => ({
+    ...prompt(seq),
+    sender,
+  });
+
+  it("finds the newest unattributed prompt as the reader's own", () => {
+    const prompts = [
+      other(2, { kind: "plugin", pluginId: "quince" }),
+      own(5),
+      other(8, { kind: "agent", agentId: "worker" }),
+      own(11),
+    ];
+    expect(latestOwnPromptSeq(prompts)).toBe(11);
+  });
+
+  it("finds the newest attributed prompt as someone else's", () => {
+    const prompts = [
+      own(2),
+      other(5, { kind: "agent", agentId: "worker", title: "Worker" }),
+      own(8),
+      other(11, { kind: "plugin", pluginId: "quince", label: "Quince" }),
+    ];
+    expect(latestOtherPromptSeq(prompts)).toBe(11);
+  });
+
+  it("returns null when a side has no prompt", () => {
+    expect(latestOwnPromptSeq([other(2, { kind: "plugin", pluginId: "quince" })])).toBeNull();
+    expect(latestOtherPromptSeq([own(2)])).toBeNull();
+    expect(latestOwnPromptSeq([])).toBeNull();
+    expect(latestOtherPromptSeq([])).toBeNull();
+  });
+
+  it("names senders from the most specific field", () => {
+    expect(outlineSenderName({ kind: "plugin", pluginId: "quince", label: "Quince" })).toBe(
+      "Quince",
+    );
+    expect(outlineSenderName({ kind: "plugin", pluginId: "quince" })).toBe("quince");
+    expect(outlineSenderName({ kind: "agent", agentId: "a-1", title: "Worker" })).toBe("Worker");
+    expect(outlineSenderName({ kind: "agent", agentId: "a-1" })).toBe("a-1");
   });
 });
 
