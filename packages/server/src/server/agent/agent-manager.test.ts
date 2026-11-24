@@ -847,15 +847,19 @@ test("records the sender on a submitted plugin prompt and recovers it across a p
   const store = new RecordingTimelineStore();
   class ReplaySession extends TestAgentSession {
     override async *streamHistory(): AsyncGenerator<AgentStreamEvent> {
-      // The provider replays the raw prompt without any sender of its own.
+      // Pi-shaped replay: the provider replays its own entry id and never echoes
+      // the client message id, so matching has to go through providerMessageId.
       yield {
         type: "timeline",
         provider: "codex",
-        item: { type: "user_message", text: "orchestrate", messageId: "prompt-1" },
+        item: { type: "user_message", text: "orchestrate", messageId: "provider-entry-1" },
       };
     }
   }
   class ReplayClient extends TestAgentClient {
+    override async createSession(config: AgentSessionConfig): Promise<AgentSession> {
+      return new EchoSession({ provider: "codex", cwd: config.cwd ?? workdir });
+    }
     override async resumeSession(
       _handle: AgentPersistenceHandle,
       config?: Partial<AgentSessionConfig>,
@@ -869,6 +873,23 @@ test("records the sender on a submitted plugin prompt and recovers it across a p
     logger,
   });
   let agentId: string | null = null;
+  class EchoSession extends TestAgentSession {
+    override async startTurn(): Promise<{ turnId: string }> {
+      const turn = await super.startTurn();
+      // Echo the provider's own id for the prompt, the way Pi and OpenCode do.
+      this.pushEvent({
+        type: "timeline",
+        provider: this.provider,
+        item: {
+          type: "user_message",
+          text: "orchestrate",
+          messageId: "provider-entry-1",
+          clientMessageId: "prompt-1",
+        },
+      });
+      return turn;
+    }
+  }
   try {
     const agent = await manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
       workspaceId: undefined,
@@ -879,12 +900,15 @@ test("records the sender on a submitted plugin prompt and recovers it across a p
       sender: { kind: "plugin", pluginId: "quince", label: "Quince" },
     })) {
     }
-    expect(manager.getTimeline(agent.id).find((item) => item.type === "user_message")).toEqual(
+    const recorded = manager.getTimeline(agent.id).find((item) => item.type === "user_message");
+    expect(recorded).toEqual(
       expect.objectContaining({
         type: "user_message",
         sender: { kind: "plugin", pluginId: "quince", label: "Quince" },
       }),
     );
+    // The echo carries the provider's id, which the store keeps on the row.
+    expect(recorded).toEqual(expect.objectContaining({ messageId: "prompt-1" }));
 
     // The replay replaces the timeline; the sender of the matching prompt row survives it.
     await manager.reloadAgentSession(agent.id, undefined, { rehydrateFromDisk: true });
@@ -894,7 +918,7 @@ test("records the sender on a submitted plugin prompt and recovers it across a p
       {
         type: "user_message",
         text: "orchestrate",
-        messageId: "prompt-1",
+        messageId: "provider-entry-1",
         sender: { kind: "plugin", pluginId: "quince", label: "Quince" },
       },
     ]);

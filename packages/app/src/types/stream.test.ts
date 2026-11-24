@@ -256,6 +256,44 @@ describe("user message identity", () => {
     );
   });
 
+  it("carries the sender onto an existing local row that was recorded without one", () => {
+    // The sending app's own optimistic row has no sender; the canonical event
+    // that later matches it is the only side carrying attribution.
+    const first = reduceStreamUpdate(
+      [],
+      {
+        type: "timeline",
+        provider: "codex",
+        item: { type: "user_message", text: "hello", clientMessageId: "hello-client" },
+      },
+      new Date("2026-08-15T10:00:00Z"),
+    );
+    const result = applyStreamEvent({
+      tail: first,
+      head: [],
+      event: {
+        type: "timeline",
+        provider: "codex",
+        item: {
+          type: "user_message",
+          text: "hello",
+          clientMessageId: "hello-client",
+          messageId: "provider-hello",
+          sender: { kind: "plugin", pluginId: "quince", label: "Quince" },
+        },
+      },
+      timestamp: new Date("2026-08-15T10:00:01Z"),
+    });
+
+    expect(result.tail).toHaveLength(1);
+    expect(result.tail[0]).toEqual(
+      expect.objectContaining({
+        kind: "user_message",
+        sender: { kind: "plugin", pluginId: "quince", label: "Quince" },
+      }),
+    );
+  });
+
   it("leaves a person's prompt without a sender", () => {
     const result = reduceStreamUpdate(
       [],

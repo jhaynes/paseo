@@ -161,6 +161,8 @@ function submittedPromptText(prompt: AgentPromptInput): string {
 interface RecoveredUserMessageSenders {
   byMessageId: ReadonlyMap<string, UserMessageSender>;
   byClientMessageId: ReadonlyMap<string, UserMessageSender>;
+  /** Keyed by the provider's own message id, which the record path keeps off the item. */
+  byProviderMessageId: ReadonlyMap<string, UserMessageSender>;
 }
 
 /** Re-attach a recorded sender to the replayed row for the same provider message. */
@@ -171,7 +173,8 @@ function recoveredUserMessageSender(
   if (item.type !== "user_message" || item.sender) return item;
   const sender =
     (item.messageId ? recovered.byMessageId.get(item.messageId) : undefined) ??
-    (item.clientMessageId ? recovered.byClientMessageId.get(item.clientMessageId) : undefined);
+    (item.clientMessageId ? recovered.byClientMessageId.get(item.clientMessageId) : undefined) ??
+    (item.messageId ? recovered.byProviderMessageId.get(item.messageId) : undefined);
   return sender ? { ...item, sender } : item;
 }
 
@@ -2095,6 +2098,10 @@ export class AgentManager {
         restoring: true,
       });
     } catch (error) {
+      // The stash is only valid for the hydration that follows a successful
+      // registration; a failed reload would otherwise leave it stuck until the
+      // next hydration consumed it.
+      this.stashedUserMessageSenders.delete(agentId);
       if (closedExisting) {
         this.emitClosedAgent(closedExisting, { persist: false });
       } else if (this.agents.get(agentId) === existing) {
@@ -5279,13 +5286,17 @@ export class AgentManager {
   private takeUserMessageSenders(agentId: string): RecoveredUserMessageSenders {
     const byMessageId = new Map<string, UserMessageSender>();
     const byClientMessageId = new Map<string, UserMessageSender>();
+    const byProviderMessageId = new Map<string, UserMessageSender>();
     for (const row of this.timelineStore.getRows(agentId)) {
       if (row.item.type !== "user_message" || !row.item.sender) continue;
       if (row.item.messageId) byMessageId.set(row.item.messageId, row.item.sender);
       if (row.item.clientMessageId)
         byClientMessageId.set(row.item.clientMessageId, row.item.sender);
+      // Providers that replay their own ids (Pi) never send back the client message
+      // id, so match on the provider message id the record path stashed on the row.
+      if (row.providerMessageId) byProviderMessageId.set(row.providerMessageId, row.item.sender);
     }
-    return { byMessageId, byClientMessageId };
+    return { byMessageId, byClientMessageId, byProviderMessageId };
   }
 
   /** Senders saved by a rehydrating reload, consumed by the history replay that follows. */

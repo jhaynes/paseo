@@ -279,6 +279,9 @@ function produceUserMessage(
     clientMessageId: incoming.clientMessageId ?? existing.clientMessageId,
     messageId: incoming.messageId ?? existing.messageId,
     timelineCursor: incoming.timelineCursor ?? existing.timelineCursor,
+    // The canonical event is the only side that can carry attribution; keep it
+    // when the presentation came from an older row recorded without a sender.
+    sender: presentation.sender ?? incoming.sender,
   });
   if (
     existing.id === merged.id &&
@@ -287,6 +290,7 @@ function produceUserMessage(
     existing.timelineCursor === merged.timelineCursor &&
     existing.text === merged.text &&
     existing.timestamp === merged.timestamp &&
+    existing.sender === merged.sender &&
     existing.images === merged.images &&
     existing.attachments === merged.attachments
   ) {
