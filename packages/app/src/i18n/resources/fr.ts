@@ -2216,6 +2216,10 @@ export const fr: TranslationResources = {
     input: "Entrée",
     output: "Sortie",
   },
+  chatOutline: {
+    jumpToMyLatest: "Aller à mon dernier prompt",
+    jumpToLatestOther: "Aller au dernier prompt d'un autre expéditeur",
+  },
   turnSummary: {
     details: "Voir les détails du tour",
     sentBy: "Envoyé par {{name}}",

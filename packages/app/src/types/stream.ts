@@ -94,9 +94,19 @@ export type StreamItem =
 
 export type UserMessageImageAttachment = AttachmentMetadata;
 
+/**
+ * Who sent a prompt. Absent means a person (or unknown), so the bubble and the
+ * outline treat unattributed rows as the reader's own input. Agent rows are
+ * attributed by presentation for received agent messages; plugin rows arrive
+ * attributed from the daemon.
+ */
+export type UserMessageSender =
+  | { kind: "agent"; agentId: string; serverId?: string; title?: string }
+  | { kind: "plugin"; pluginId: string; label?: string };
+
 export interface UserMessageItem {
-  /** Attribution added by presentation for received agent messages. */
-  sender?: AgentMessage["sender"];
+  /** Attribution added by presentation for received agent messages, or by the daemon for plugins. */
+  sender?: UserMessageSender;
   kind: "user_message";
   id: string;
   clientMessageId?: string;
@@ -117,6 +127,7 @@ export interface UserMessageInput {
   timelineCursor?: TimelinePosition;
   text: string;
   timestamp: Date;
+  sender?: UserMessageSender;
   images?: UserMessageImageAttachment[];
   attachments?: AgentAttachment[];
 }
@@ -133,6 +144,7 @@ export function createUserMessage(input: UserMessageInput): UserMessageItem {
     ...(input.messageId ? { messageId: input.messageId } : {}),
     ...(input.turnId ? { turnId: input.turnId } : {}),
     ...(input.timelineCursor ? { timelineCursor: input.timelineCursor } : {}),
+    ...(input.sender ? { sender: input.sender } : {}),
     text: input.text,
     timestamp: input.timestamp,
     ...(input.images && input.images.length > 0 ? { images: input.images } : {}),
@@ -267,6 +279,9 @@ function produceUserMessage(
     clientMessageId: incoming.clientMessageId ?? existing.clientMessageId,
     messageId: incoming.messageId ?? existing.messageId,
     timelineCursor: incoming.timelineCursor ?? existing.timelineCursor,
+    // The canonical event is the only side that can carry attribution; keep it
+    // when the presentation came from an older row recorded without a sender.
+    sender: presentation.sender ?? incoming.sender,
   });
   if (
     existing.id === merged.id &&
@@ -275,6 +290,7 @@ function produceUserMessage(
     existing.timelineCursor === merged.timelineCursor &&
     existing.text === merged.text &&
     existing.timestamp === merged.timestamp &&
+    existing.sender === merged.sender &&
     existing.images === merged.images &&
     existing.attachments === merged.attachments
   ) {
@@ -929,6 +945,7 @@ function appendUserMessage(
   clientMessageId?: string,
   timelineCursor?: TimelinePosition,
   turnId?: string,
+  sender?: UserMessageSender,
 ): StreamItem[] {
   const { chunk, hasContent } = normalizeChunk(text);
   if (!hasContent) {
@@ -942,6 +959,7 @@ function appendUserMessage(
     messageId,
     timelineCursor,
     turnId,
+    sender,
     text: chunk,
     timestamp,
   });
@@ -1552,6 +1570,7 @@ function reduceTimelineEvent(
         item.clientMessageId,
         timelineCursor,
         event.turnId,
+        item.sender,
       );
     case "assistant_message":
       return appendAssistantMessage(
@@ -1916,6 +1935,7 @@ function applyCanonicalUserMessageEvent(params: {
     clientMessageId: event.item.clientMessageId,
     turnId: event.turnId,
     timelineCursor,
+    sender: event.item.sender,
     text: normalized.chunk,
     timestamp,
   });

@@ -407,8 +407,22 @@ export interface AgentTaskItem {
   activeForm?: string;
 }
 
+/**
+ * Who sent a prompt. Absent means a person (or a pre-sender row), so clients can
+ * treat unknown provenance as human input.
+ */
+export type UserMessageSender =
+  | { kind: "agent"; agentId: string; serverId?: string; title?: string }
+  | { kind: "plugin"; pluginId: string; label?: string };
+
 export type AgentTimelineItem =
-  | { type: "user_message"; text: string; messageId?: string; clientMessageId?: string }
+  | {
+      type: "user_message";
+      text: string;
+      messageId?: string;
+      clientMessageId?: string;
+      sender?: UserMessageSender;
+    }
   | { type: "assistant_message"; text: string; messageId?: string }
   | { type: "reasoning"; text: string }
   | ToolCallTimelineItem

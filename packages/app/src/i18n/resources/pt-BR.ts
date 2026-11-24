@@ -2202,6 +2202,10 @@ export const ptBR: TranslationResources = {
     input: "Entrada",
     output: "Saída",
   },
+  chatOutline: {
+    jumpToMyLatest: "Ir para meu último prompt",
+    jumpToLatestOther: "Ir para o último prompt de outra pessoa",
+  },
   turnSummary: {
     details: "Ver detalhes do turno",
     sentBy: "Enviado por {{name}}",

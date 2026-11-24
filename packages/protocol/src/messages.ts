@@ -304,6 +304,7 @@ import type {
   ToolCallTimelineItem,
   AgentUsage,
   JsonValue,
+  UserMessageSender,
 } from "./agent-types.js";
 
 // WebSocket payloads have already crossed JSON serialization. Keeping this as
@@ -763,6 +764,22 @@ const ToolCallTimelineItemPayloadSchema: z.ZodType<ToolCallTimelineItem, unknown
     ToolCallCanceledPayloadSchema,
   ]);
 
+// A plain union: a discriminated union nested inside this item union hit the
+// zod-aot 0.20.4 nested-dispatch regression noted below.
+export const UserMessageSenderSchema: z.ZodType<UserMessageSender, unknown> = z.union([
+  z.object({
+    kind: z.literal("agent"),
+    agentId: z.string().min(1),
+    serverId: z.string().min(1).optional(),
+    title: z.string().min(1).optional(),
+  }),
+  z.object({
+    kind: z.literal("plugin"),
+    pluginId: z.string().min(1),
+    label: z.string().min(1).optional(),
+  }),
+]);
+
 // zod-aot 0.20.4 miscompiles this as a nested discriminated union by omitting
 // the inner tool_call branch from the generated outer dispatch.
 export const AgentTimelineItemPayloadSchema: z.ZodType<AgentTimelineItem, unknown> = z.union([
@@ -771,6 +788,7 @@ export const AgentTimelineItemPayloadSchema: z.ZodType<AgentTimelineItem, unknow
     text: z.string(),
     messageId: z.string().optional(),
     clientMessageId: z.string().optional(),
+    sender: UserMessageSenderSchema.optional(),
   }),
   z.object({
     type: z.literal("assistant_message"),
@@ -5218,6 +5236,7 @@ export const AgentTimelineListPromptsResponseMessageSchema = z.object({
         seq: z.number().int().nonnegative(),
         timestamp: z.string(),
         preview: z.string(),
+        sender: UserMessageSenderSchema.optional(),
       }),
     ),
     error: z.string().nullable(),

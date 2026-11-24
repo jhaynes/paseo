@@ -1,14 +1,14 @@
 import { useState, useCallback, useLayoutEffect, useMemo, useRef, type ReactNode } from "react";
-import { View, type LayoutChangeEvent, type ViewStyle } from "react-native";
+import { Text, View, type LayoutChangeEvent, type ViewStyle } from "react-native";
 import { StyleSheet } from "react-native-unistyles";
 import { useTranslation } from "react-i18next";
-import type { AgentMessage } from "@getpaseo/protocol/agent-message";
 import { Button } from "@/components/ui/button";
 import { EdgeFade } from "@/components/ui/edge-fade";
 import { useProviderIcon } from "@/components/provider-icons";
 import { useSessionStore } from "@/stores/session-store";
 import { navigateToAgent } from "@/utils/navigate-to-agent";
 import { isNative } from "@/constants/platform";
+import type { UserMessageSender } from "@/types/stream";
 import { useDisclosureHold } from "@/agent-stream/disclosure";
 import { useUserMessageExpanded } from "./expansion-context";
 
@@ -76,14 +76,35 @@ export function MessageSender({
   sender,
   serverId,
 }: {
-  sender: AgentMessage["sender"];
+  sender: UserMessageSender;
+  serverId?: string;
+}) {
+  const { t } = useTranslation();
+  if (sender.kind === "plugin") {
+    // A plugin has no agent page to open, so its attribution is a plain label.
+    return (
+      <View style={styles.pluginSender} testID="user-message-plugin-sender">
+        <Text style={styles.senderText} numberOfLines={1} ellipsizeMode="tail">
+          {t("turnSummary.sentBy", { name: sender.label ?? sender.pluginId })}
+        </Text>
+      </View>
+    );
+  }
+  return <MessageAgentSender sender={sender} serverId={serverId} />;
+}
+
+function MessageAgentSender({
+  sender,
+  serverId,
+}: {
+  sender: Extract<UserMessageSender, { kind: "agent" }>;
   serverId?: string;
 }) {
   const { t } = useTranslation();
   const host = sender.serverId ?? serverId;
   const agent = useSessionStore((state) => {
     const session = host ? state.sessions[host] : undefined;
-    return session?.agents.get(sender.id) ?? session?.agentDetails.get(sender.id);
+    return session?.agents.get(sender.agentId) ?? session?.agentDetails.get(sender.agentId);
   });
   const ProviderIcon = useProviderIcon(agent?.provider ?? "", host);
   const renderProviderIcon = useCallback(
@@ -91,8 +112,8 @@ export function MessageSender({
     [ProviderIcon],
   );
   const openSender = useCallback(() => {
-    if (host) navigateToAgent({ serverId: host, agentId: sender.id });
-  }, [host, sender.id]);
+    if (host) navigateToAgent({ serverId: host, agentId: sender.agentId });
+  }, [host, sender.agentId]);
   return (
     <Button
       variant="ghost"
@@ -104,7 +125,7 @@ export function MessageSender({
       disabled={!host}
       onPress={openSender}
     >
-      {t("turnSummary.sentBy", { name: agent?.title ?? sender.title ?? sender.id })}
+      {t("turnSummary.sentBy", { name: agent?.title ?? sender.title ?? sender.agentId })}
     </Button>
   );
 }
@@ -112,6 +133,13 @@ export function MessageSender({
 const styles = StyleSheet.create((theme) => ({
   body: { flexShrink: 0 },
   sender: { paddingRight: 0, borderRightWidth: 0, maxWidth: "100%" },
+  pluginSender: {
+    paddingRight: 0,
+    borderRightWidth: 0,
+    maxWidth: "100%",
+    minHeight: 24,
+    justifyContent: "center",
+  },
   senderText: { flexShrink: 1 },
   toggle: { alignSelf: "flex-start", paddingHorizontal: 0, minHeight: 0, borderWidth: 0 },
   expandedToggle: { marginTop: theme.spacing[2] },

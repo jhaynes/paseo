@@ -2178,6 +2178,10 @@ export const ko: TranslationResources = {
     input: "입력",
     output: "출력",
   },
+  chatOutline: {
+    jumpToMyLatest: "내 최신 프롬프트로 이동",
+    jumpToLatestOther: "다른 보낸 사람의 최신 프롬프트로 이동",
+  },
   turnSummary: {
     details: "턴 세부 정보 보기",
     sentBy: "{{name}}이(가) 보냄",

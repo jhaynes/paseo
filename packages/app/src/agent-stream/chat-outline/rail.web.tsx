@@ -2,10 +2,18 @@ import { memo, useCallback, useEffect, useMemo, useState, useSyncExternalStore }
 import { Pressable, Text, View, type PointerEvent as RNPointerEvent } from "react-native";
 import { StyleSheet } from "react-native-unistyles";
 import { useReducedMotion } from "react-native-reanimated";
+import { withUnistyles } from "react-native-unistyles";
+import { useTranslation } from "react-i18next";
+import { Bot, UserRound } from "lucide-react-native";
 import { inlineUnistylesStyle } from "@/styles/unistyles-inline-style";
 import { CHAT_OUTLINE_RAIL_LEFT, CHAT_OUTLINE_RAIL_WIDTH } from "./geometry";
 import { createChatOutlineHoverIntent } from "./hover-intent";
-import { promptTickMagnification } from "./model";
+import {
+  latestOtherPromptSeq,
+  latestOwnPromptSeq,
+  outlineSenderName,
+  promptTickMagnification,
+} from "./model";
 import type { ChatOutlineRailProps } from "./rail";
 
 // Hover tracking lives on the rail and the slots, never on the Pressable inside them:
@@ -31,6 +39,9 @@ export const ChatOutlineRail = memo(function ChatOutlineRail({
   const [focusedIndex, setFocusedIndex] = useState<number | null>(null);
   const activeSeq = useSyncExternalStore(activePrompt.subscribe, activePrompt.getActiveSeq);
   const prefersReducedMotion = useReducedMotion();
+  const { t } = useTranslation();
+  const ownSeq = useMemo(() => latestOwnPromptSeq(prompts), [prompts]);
+  const otherSeq = useMemo(() => latestOtherPromptSeq(prompts), [prompts]);
 
   const hoverIntent = useMemo(
     () =>
@@ -79,13 +90,28 @@ export const ChatOutlineRail = memo(function ChatOutlineRail({
       onPointerMove={handlePointerMoveRail}
       onPointerLeave={handlePointerLeaveRail}
     >
+      <ChatOutlineQuickJump
+        icon={UserRound}
+        label={t("chatOutline.jumpToMyLatest")}
+        seq={ownSeq}
+        disabled={ownSeq === null}
+        onJumpToPrompt={onJumpToPrompt}
+      />
+      <ChatOutlineQuickJump
+        icon={Bot}
+        label={t("chatOutline.jumpToLatestOther")}
+        seq={otherSeq}
+        disabled={otherSeq === null}
+        onJumpToPrompt={onJumpToPrompt}
+      />
       {prompts.map((prompt, index) => (
         <ChatOutlineTick
           key={prompt.seq}
           index={index}
           seq={prompt.seq}
           preview={prompt.preview}
-          label={`${index + 1} of ${prompts.length}: ${prompt.preview}`}
+          senderName={prompt.sender ? outlineSenderName(prompt.sender) : undefined}
+          label={`${index + 1} of ${prompts.length}${prompt.sender ? ` (${outlineSenderName(prompt.sender)})` : ""}: ${prompt.preview}`}
           isActive={prompt.seq === activeSeq}
           hasAttention={index === attentionIndex}
           magnification={
@@ -102,10 +128,51 @@ export const ChatOutlineRail = memo(function ChatOutlineRail({
   );
 });
 
+interface ChatOutlineQuickJumpProps {
+  icon: typeof UserRound;
+  label: string;
+  seq: number | null;
+  disabled: boolean;
+  onJumpToPrompt: (seq: number) => void;
+}
+
+function QuickJumpIconGlyph({ icon: Icon, color }: { icon: typeof UserRound; color: string }) {
+  return <Icon size={12} color={color} />;
+}
+
+const ThemedQuickJumpIcon = withUnistyles(QuickJumpIconGlyph, (theme) => ({
+  color: theme.colors.foregroundMuted,
+}));
+
+const ChatOutlineQuickJump = memo(function ChatOutlineQuickJump({
+  icon,
+  label,
+  seq,
+  disabled,
+  onJumpToPrompt,
+}: ChatOutlineQuickJumpProps) {
+  const handlePress = useCallback(() => {
+    if (seq !== null) onJumpToPrompt(seq);
+  }, [onJumpToPrompt, seq]);
+  return (
+    <Pressable
+      style={styles.quickJump}
+      onPress={handlePress}
+      disabled={disabled}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      testID={`chat-outline-quick-jump-${seq === null ? "disabled" : seq}`}
+    >
+      <ThemedQuickJumpIcon icon={icon} />
+    </Pressable>
+  );
+});
+
 interface ChatOutlineTickProps {
   index: number;
   seq: number;
   preview: string;
+  senderName?: string;
   label: string;
   isActive: boolean;
   hasAttention: boolean;
@@ -119,6 +186,7 @@ const ChatOutlineTick = memo(function ChatOutlineTick({
   index,
   seq,
   preview,
+  senderName,
   label,
   isActive,
   hasAttention,
@@ -165,6 +233,11 @@ const ChatOutlineTick = memo(function ChatOutlineTick({
       </Pressable>
       {hasAttention ? (
         <View style={styles.preview} pointerEvents="none" aria-hidden testID="chat-outline-preview">
+          {senderName ? (
+            <Text style={styles.previewSender} numberOfLines={1}>
+              {senderName}
+            </Text>
+          ) : null}
           <Text style={styles.previewText} numberOfLines={2}>
             {preview}
           </Text>
@@ -237,5 +310,17 @@ const styles = StyleSheet.create((theme) => ({
   previewText: {
     fontSize: theme.fontSize.sm,
     color: theme.colors.foreground,
+  },
+  previewSender: {
+    fontSize: theme.fontSize.sm,
+    color: theme.colors.foregroundMuted,
+    marginBottom: theme.spacing[1],
+  },
+  quickJump: {
+    width: RAIL_WIDTH,
+    height: 20,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: theme.borderRadius.base,
   },
 }));

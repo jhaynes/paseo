@@ -28,7 +28,7 @@ import {
   PARENT_AGENT_ID_LABEL,
 } from "@getpaseo/protocol/agent-labels";
 import type { Logger } from "pino";
-import type { ToolPolicy } from "@getpaseo/protocol/agent-types";
+import type { ToolPolicy, UserMessageSender } from "@getpaseo/protocol/agent-types";
 import type { ProviderPaseoToolsPolicy } from "@getpaseo/protocol/provider-config";
 import { z } from "zod";
 import type { TerminalManager } from "../../terminal/terminal-manager.js";
@@ -156,6 +156,26 @@ function submittedPromptText(prompt: AgentPromptInput): string {
     .flatMap((block) => (block.type === "text" && !("mimeType" in block) ? [block.text] : []))
     .join("\n")
     .trim();
+}
+
+interface RecoveredUserMessageSenders {
+  byMessageId: ReadonlyMap<string, UserMessageSender>;
+  byClientMessageId: ReadonlyMap<string, UserMessageSender>;
+  /** Keyed by the provider's own message id, which the record path keeps off the item. */
+  byProviderMessageId: ReadonlyMap<string, UserMessageSender>;
+}
+
+/** Re-attach a recorded sender to the replayed row for the same provider message. */
+function recoveredUserMessageSender(
+  item: AgentTimelineItem,
+  recovered: RecoveredUserMessageSenders,
+): AgentTimelineItem {
+  if (item.type !== "user_message" || item.sender) return item;
+  const sender =
+    (item.messageId ? recovered.byMessageId.get(item.messageId) : undefined) ??
+    (item.clientMessageId ? recovered.byClientMessageId.get(item.clientMessageId) : undefined) ??
+    (item.messageId ? recovered.byProviderMessageId.get(item.messageId) : undefined);
+  return sender ? { ...item, sender } : item;
 }
 
 export class AgentManagerShuttingDownError extends Error {
@@ -2048,6 +2068,9 @@ export class AgentManager {
       if (rehydrateFromDisk) {
         // Wipe the in-memory timeline so registerSession mints a new epoch and
         // hydrateTimelineFromProvider re-streams the freshly read provider history.
+        // The replay is about to replace the recorded rows, so keep the senders
+        // only Paseo knew for the replay to re-attach.
+        this.stashedUserMessageSenders.set(agentId, this.takeUserMessageSenders(agentId));
         this.timelineStore.delete(agentId);
         for (const event of this.providerSubagents.deleteParent(agentId)) {
           this.dispatch({ type: "provider_subagent", event });
@@ -2075,6 +2098,10 @@ export class AgentManager {
         restoring: true,
       });
     } catch (error) {
+      // The stash is only valid for the hydration that follows a successful
+      // registration; a failed reload would otherwise leave it stuck until the
+      // next hydration consumed it.
+      this.stashedUserMessageSenders.delete(agentId);
       if (closedExisting) {
         this.emitClosedAgent(closedExisting, { persist: false });
       } else if (this.agents.get(agentId) === existing) {
@@ -3182,7 +3209,13 @@ export class AgentManager {
     onAccepted?.();
     this.touchUpdatedAt(agent);
     if (options?.clientMessageId) {
-      this.recordSubmittedPrompt(agent, prompt, options.clientMessageId, "accepted");
+      this.recordSubmittedPrompt(
+        agent,
+        prompt,
+        options.clientMessageId,
+        "accepted",
+        options.sender ? { sender: options.sender } : undefined,
+      );
       this.emitState(agent);
     }
     const dispatch = (event: AgentStreamEvent): void => {
@@ -3300,6 +3333,7 @@ export class AgentManager {
           if (options?.clientMessageId) {
             this.recordSubmittedPrompt(agent, prompt, options.clientMessageId, "rejected", {
               messageId: options.clientMessageId,
+              ...(options.sender ? { sender: options.sender } : {}),
             });
           }
           await this.handleStreamEvent(agent, {
@@ -3334,6 +3368,7 @@ export class AgentManager {
         if (options?.clientMessageId) {
           this.recordSubmittedPrompt(agent, prompt, options.clientMessageId, "rejected", {
             messageId: options.clientMessageId,
+            ...(options.sender ? { sender: options.sender } : {}),
           });
         }
         await this.handleStreamEvent(agent, {
@@ -3531,6 +3566,7 @@ export class AgentManager {
         this.recordSubmittedPrompt(agent, prompt, options.clientMessageId, "accepted", {
           messageId: options.clientMessageId,
           turnId,
+          ...(options.sender ? { sender: options.sender } : {}),
           providerMessageId:
             stagedSubmittedPromptEcho?.item.type === "user_message"
               ? stagedSubmittedPromptEcho.item.messageId
@@ -3682,6 +3718,7 @@ export class AgentManager {
           options?.clientMessageId,
           expectedTurnId,
           admission.providerMessageId,
+          options?.sender,
         );
       }
       return admission;
@@ -3722,6 +3759,7 @@ export class AgentManager {
               options?.clientMessageId,
               expectedTurnId,
               admission.providerMessageId,
+              options?.sender,
             );
           }
           return admission;
@@ -3901,6 +3939,7 @@ export class AgentManager {
     clientMessageId: string | undefined,
     expectedTurnId: string,
     providerMessageId: string | undefined,
+    sender?: UserMessageSender,
   ): Promise<void> {
     if (!clientMessageId) {
       return;
@@ -3909,6 +3948,7 @@ export class AgentManager {
       messageId: clientMessageId,
       turnId: expectedTurnId,
       ...(providerMessageId ? { providerMessageId } : {}),
+      ...(sender ? { sender } : {}),
     });
     this.emitState(agent);
   }
@@ -5178,6 +5218,7 @@ export class AgentManager {
     }
 
     this.agentStreamCoalescer.flushAndDiscard(agent.id);
+    const recoveredSenders = this.takeStashedUserMessageSenders(agent.id);
     await this.deleteCommittedTimeline(agent.id);
     this.timelineStore.delete(agent.id);
     this.timelineStore.initialize(agent.id, { timestamp: new Date().toISOString() });
@@ -5195,7 +5236,7 @@ export class AgentManager {
       }
     }
     for (const entry of historyEntries) {
-      const replayed = this.replayProviderHistoryEntry(agent, entry);
+      const replayed = this.replayProviderHistoryEntry(agent, entry, recoveredSenders);
       if (replayed && broadcastTimeline) {
         this.dispatchStream(agent.id, replayed.event, {
           seq: replayed.row.seq,
@@ -5215,6 +5256,7 @@ export class AgentManager {
   private replayProviderHistoryEntry(
     agent: ActiveManagedAgent,
     entry: ProviderHistoryEntry,
+    recoveredSenders?: RecoveredUserMessageSenders,
   ): ReplayedTimelineRow | null {
     if (entry.type === "turn_metrics") {
       this.stampTurnMetrics(agent.id, entry.metrics);
@@ -5225,12 +5267,45 @@ export class AgentManager {
       return null;
     }
     const { event } = entry;
+    const item = recoveredSenders
+      ? recoveredUserMessageSender(event.item, recoveredSenders)
+      : event.item;
     const row = this.recordTimeline(
       agent.id,
-      event.item,
+      item,
       event.timestamp ? { timestamp: event.timestamp } : undefined,
     );
     return { event, row };
+  }
+
+  /**
+   * A provider history replay replaces the recorded timeline, so a sender only Paseo
+   * knew is about to be dropped. Snapshot the senders of user_message rows first and
+   * re-attach the ones that match by message identity.
+   */
+  private takeUserMessageSenders(agentId: string): RecoveredUserMessageSenders {
+    const byMessageId = new Map<string, UserMessageSender>();
+    const byClientMessageId = new Map<string, UserMessageSender>();
+    const byProviderMessageId = new Map<string, UserMessageSender>();
+    for (const row of this.timelineStore.getRows(agentId)) {
+      if (row.item.type !== "user_message" || !row.item.sender) continue;
+      if (row.item.messageId) byMessageId.set(row.item.messageId, row.item.sender);
+      if (row.item.clientMessageId)
+        byClientMessageId.set(row.item.clientMessageId, row.item.sender);
+      // Providers that replay their own ids (Pi) never send back the client message
+      // id, so match on the provider message id the record path stashed on the row.
+      if (row.providerMessageId) byProviderMessageId.set(row.providerMessageId, row.item.sender);
+    }
+    return { byMessageId, byClientMessageId, byProviderMessageId };
+  }
+
+  /** Senders saved by a rehydrating reload, consumed by the history replay that follows. */
+  private stashedUserMessageSenders = new Map<string, RecoveredUserMessageSenders>();
+
+  private takeStashedUserMessageSenders(agentId: string): RecoveredUserMessageSenders {
+    const stashed = this.stashedUserMessageSenders.get(agentId);
+    this.stashedUserMessageSenders.delete(agentId);
+    return stashed ?? this.takeUserMessageSenders(agentId);
   }
 
   private async primeTimelineFromLegacyProviderHistory(
@@ -5263,6 +5338,7 @@ export class AgentManager {
 
     // The replay is the timeline, so drop the rows a previous hydration committed.
     // Keeping them would leave getTimelineRows reading one copy per hydration.
+    const recoveredSenders = this.takeStashedUserMessageSenders(agent.id);
     await this.deleteCommittedTimeline(agent.id);
 
     const timelineEvents: ReplayedTimelineRow[] = [];
@@ -5277,7 +5353,7 @@ export class AgentManager {
       }
     }
     for (const entry of historyEntries) {
-      const replayed = this.replayProviderHistoryEntry(agent, entry);
+      const replayed = this.replayProviderHistoryEntry(agent, entry, recoveredSenders);
       if (!replayed) continue;
       if (deferredBroadcast) {
         timelineEvents.push(replayed);
@@ -5917,7 +5993,12 @@ export class AgentManager {
     prompt: AgentPromptInput,
     clientMessageId: string,
     outcome: "accepted" | "rejected",
-    options?: { messageId?: string; providerMessageId?: string; turnId?: string },
+    options?: {
+      messageId?: string;
+      providerMessageId?: string;
+      turnId?: string;
+      sender?: UserMessageSender;
+    },
   ): void {
     const items = projectAgentMessages({
       type: "user_message",
@@ -5928,7 +6009,13 @@ export class AgentManager {
     for (const item of items) {
       // Human attempts stay in history on rejection; delivery notifications require acceptance.
       if (outcome === "rejected" && item.type !== "user_message") continue;
-      this.recordSubmittedPromptItem(agent, item, options);
+      // Agent messages arrive pre-attributed through their envelope projection; a plugin
+      // sender rides on the plain prompt row.
+      const attributed =
+        item.type === "user_message" && options?.sender && item.sender === undefined
+          ? { ...item, sender: options.sender }
+          : item;
+      this.recordSubmittedPromptItem(agent, attributed, options);
     }
   }
 

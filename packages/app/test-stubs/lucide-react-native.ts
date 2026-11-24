@@ -143,3 +143,4 @@ export const Minimize = StubIcon;
 export const Rows2 = StubIcon;
 export const Gauge = StubIcon;
 export const GripVertical = StubIcon;
+export const UserRound = StubIcon;

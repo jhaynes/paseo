@@ -2204,6 +2204,10 @@ export const ru: TranslationResources = {
     input: "Входные данные",
     output: "Выходные данные",
   },
+  chatOutline: {
+    jumpToMyLatest: "Перейти к моему последнему запросу",
+    jumpToLatestOther: "Перейти к последнему запросу от другого отправителя",
+  },
   turnSummary: {
     details: "Показать подробности хода",
     sentBy: "Отправлено агентом {{name}}",

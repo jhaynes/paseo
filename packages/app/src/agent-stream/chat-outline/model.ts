@@ -52,6 +52,34 @@ export interface ActivePromptSource {
   getActiveSeq: () => number | null;
 }
 
+/**
+ * The reader's own latest prompt: the newest entry with no recorded sender, which
+ * covers a person's send and the unattributed rows older daemons wrote.
+ */
+export function latestOwnPromptSeq(prompts: readonly ChatOutlinePrompt[]): number | null {
+  for (let index = prompts.length - 1; index >= 0; index -= 1) {
+    const prompt = prompts[index];
+    if (prompt && prompt.sender === undefined) return prompt.seq;
+  }
+  return null;
+}
+
+/** The latest prompt someone else sent: another agent or a plugin. */
+export function latestOtherPromptSeq(prompts: readonly ChatOutlinePrompt[]): number | null {
+  for (let index = prompts.length - 1; index >= 0; index -= 1) {
+    const prompt = prompts[index];
+    if (prompt && prompt.sender !== undefined) return prompt.seq;
+  }
+  return null;
+}
+
+/** The name an outline entry shows for its sender, when one is recorded. */
+export function outlineSenderName(sender: NonNullable<ChatOutlinePrompt["sender"]>): string {
+  return sender.kind === "plugin"
+    ? (sender.label ?? sender.pluginId)
+    : (sender.title ?? sender.agentId);
+}
+
 export interface ActivePromptPublisher extends ActivePromptSource {
   publish: (seq: number | null) => void;
 }

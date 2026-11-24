@@ -779,7 +779,7 @@ it("presents received agent messages as attributed bubbles with the original tur
     id: call.id,
     turnId: "turn",
     text: "Ready",
-    sender: { id: "sender", title: "Reviewer" },
+    sender: { kind: "agent", agentId: "sender", title: "Reviewer" },
   });
 });
 

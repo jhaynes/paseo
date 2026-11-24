@@ -2167,6 +2167,10 @@ export const ar: TranslationResources = {
     input: "مدخل",
     output: "الإخراج",
   },
+  chatOutline: {
+    jumpToMyLatest: "الانتقال إلى آخر مطالبة أرسلتها",
+    jumpToLatestOther: "الانتقال إلى آخر مطالبة أرسلها شخص آخر",
+  },
   turnSummary: {
     details: "عرض تفاصيل الجولة",
     sentBy: "أرسلها {{name}}",
